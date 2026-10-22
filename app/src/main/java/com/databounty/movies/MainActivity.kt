@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.concurrent.Executors
+import com.databounty.movies.youtube.YouTubeMoviesActivity
 
 class MainActivity : AppCompatActivity() {
 
@@ -56,6 +57,9 @@ class MainActivity : AppCompatActivity() {
         header.addView(regionChip)
         header.addView(yearsChip)
         header.addView(freeChip)
+        header.addView(Ui.chip(this, "YouTube") {
+            startActivity(Intent(this, YouTubeMoviesActivity::class.java))
+        })
         updateHeader()
 
         searchBox.setOnEditorActionListener { _, _, _ ->
