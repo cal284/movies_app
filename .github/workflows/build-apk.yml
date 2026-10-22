@@ -40,6 +40,10 @@ jobs:
       #    "Permission denied". chmod +x fixes that.
       #    If there is no wrapper, fall back to the Gradle installed in step 3.
       - name: Build debug APK
+        env:
+          # Passes the GitHub secret into the build as an environment variable.
+          # Gradle reads it and bakes it into the app (BuildConfig).
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
