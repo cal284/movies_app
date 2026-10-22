@@ -17,6 +17,7 @@ android {
         versionCode = runNumber
         versionName = "1.0.$runNumber"
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbKey\"")
+        buildConfigField("String", "YOUTUBE_API_KEY", "\"${System.getenv("YOUTUBE_API_KEY") ?: ""}\"")
     }
 
     // Fixed key so each new build installs over the old one (no uninstall needed)
