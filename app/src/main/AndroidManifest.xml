@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Lets the app see and launch these streaming apps on newer Fire OS versions -->
+    <queries>
+        <package android:name="com.tubitv" />
+        <package android:name="tv.pluto.android" />
+        <package android:name="com.plexapp.android" />
+        <package android:name="com.amazon.firetv.youtube" />
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.amazon.avod" />
+        <package android:name="com.amazon.avod.thirdpartyclient" />
+        <package android:name="com.netflix.ninja" />
+        <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.kanopy" />
+        <package android:name="com.crackle.androidtv" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.hulu.plus" />
+        <package android:name="com.peacocktv.peacockandroid" />
+        <package android:name="com.cbs.ott" />
+        <package android:name="com.cbs.app" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".DetailActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+    </application>
+</manifest>
