@@ -1,104 +1,126 @@
 package com.databounty.movies
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.content.pm.ResolveInfo
 import android.net.Uri
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.bumptech.glide.Glide
-import java.util.concurrent.Executors
 
-class DetailActivity : AppCompatActivity() {
+/**
+ * Opens the streaming app for a TMDB provider name (e.g. "The Roku Channel").
+ *
+ * Order of attempts:
+ *  1. Known package names below
+ *  2. Any installed app whose NAME matches the provider (e.g. label "The Roku Channel")
+ *     -> new services work automatically once their app is installed
+ *  3. The Appstore page (known package) or an Appstore search (unknown package)
+ */
+object Launcher {
+    private val known = listOf(
+        "tubi" to listOf("com.tubitv"),
+        "pluto" to listOf("tv.pluto.android"),
+        "plex" to listOf("com.plexapp.android"),
+        "youtube" to listOf("com.amazon.firetv.youtube", "com.google.android.youtube.tv", "com.google.android.youtube"),
+        "freevee" to listOf("com.amazon.avod"),
+        "amazon" to listOf("com.amazon.avod", "com.amazon.avod.thirdpartyclient"),
+        "netflix" to listOf("com.netflix.ninja", "com.netflix.mediaclient"),
+        "kanopy" to listOf("com.kanopy"),
+        "crackle" to listOf("com.crackle.androidtv"),
+        "disney" to listOf("com.disney.disneyplus"),
+        "hulu" to listOf("com.hulu.plus"),
+        "peacock" to listOf("com.peacocktv.peacockandroid"),
+        "paramount" to listOf("com.cbs.ott", "com.cbs.app")
+    )
 
-    private val io = Executors.newSingleThreadExecutor()
-    private val main = Handler(Looper.getMainLooper())
+    /** Extra app names to look for when the app's name differs from TMDB's service name. */
+    private val labelAliases = mapOf(
+        "fandango" to listOf("fandango", "vudu"),
+        "roku" to listOf("roku"),
+        "paramount" to listOf("paramount"),
+        "amazon" to listOf("prime video", "freevee")
+    )
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_detail)
+    /** Words in TMDB service names that don't identify the service. */
+    private val stopWords = setOf(
+        "the", "tv", "free", "with", "ads", "channel", "premium", "plus", "at", "home",
+        "on", "and", "standard", "basic", "video", "movies", "app"
+    )
 
-        val id = intent.getIntExtra("id", 0)
-        val title = intent.getStringExtra("title") ?: ""
-        val year = intent.getStringExtra("year") ?: ""
-        val overview = intent.getStringExtra("overview") ?: ""
-        val poster = intent.getStringExtra("poster")
-        val backdrop = intent.getStringExtra("backdrop")
-        val rating = intent.getDoubleExtra("rating", 0.0)
-        val region = Settings.load(this).region
+    private fun packagesFor(name: String): List<String> {
+        val n = name.lowercase()
+        return known.firstOrNull { n.contains(it.first) }?.second ?: emptyList()
+    }
 
-        findViewById<TextView>(R.id.title).text = title
-        findViewById<TextView>(R.id.meta).text =
-            listOfNotNull(
-                year.ifEmpty { null },
-                if (rating > 0) "★ ${"%.1f".format(rating)}" else null
-            ).joinToString("   ")
-        findViewById<TextView>(R.id.overview).text = overview.ifEmpty { "No description available." }
-        findViewById<TextView>(R.id.whereLabel).text = "Where to watch in ${Regions.name(region)}"
+    /** "Fandango at Home Free" -> ["fandango", "vudu"]; "The Roku Channel" -> ["roku"] */
+    private fun keywordsFor(name: String): List<String> {
+        val words = name.lowercase()
+            .split(Regex("[^a-z0-9+]+"))
+            .filter { it.length >= 3 && it !in stopWords }
+        val aliases = labelAliases.entries
+            .filter { (key, _) -> name.lowercase().contains(key) }
+            .flatMap { it.value }
+        return (words + aliases).distinct()
+    }
 
-        val posterView = findViewById<ImageView>(R.id.poster)
-        if (poster != null) {
-            Glide.with(this).load(Tmdb.IMG + "w500" + poster)
-                .placeholder(R.drawable.poster_placeholder).into(posterView)
-        } else {
-            posterView.setImageResource(R.drawable.poster_placeholder)
+    /** Looks through installed apps for one whose name matches the provider. */
+    private fun findInstalledByName(ctx: Context, providerName: String): Intent? {
+        val keywords = keywordsFor(providerName)
+        if (keywords.isEmpty()) return null
+        val pm = ctx.packageManager
+
+        val apps = mutableListOf<ResolveInfo>()
+        for (category in listOf(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER)) {
+            apps += pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(category), 0)
         }
-        if (backdrop != null) {
-            Glide.with(this).load(Tmdb.IMG + "w1280" + backdrop).into(findViewById<ImageView>(R.id.backdrop))
+
+        val match = apps.firstOrNull { ri ->
+            if (ri.activityInfo.packageName == ctx.packageName) return@firstOrNull false
+            val label = ri.loadLabel(pm).toString().lowercase()
+            keywords.any { kw -> if (kw.contains(' ')) label.contains(kw) else label.split(Regex("[^a-z0-9+]+")).contains(kw) }
+        } ?: return null
+
+        val pkg = match.activityInfo.packageName
+        return pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
+    }
+
+    private fun launch(ctx: Context, intent: Intent): Boolean = try {
+        ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Tries to open the provider's app. Returns a message to show the user. */
+    fun open(ctx: Context, provider: Provider, title: String): String {
+        val pm = ctx.packageManager
+        val pkgs = packagesFor(provider.name)
+
+        // 1. Known package names
+        for (pkg in pkgs) {
+            val intent = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
+            if (intent != null && launch(ctx, intent)) return "Opened ${provider.name} — search for \"$title\""
         }
 
-        val row = findViewById<LinearLayout>(R.id.providerRow)
-        val hint = findViewById<TextView>(R.id.hint)
-        hint.text = "Checking streaming services…"
+        // 2. Installed app with a matching name
+        findInstalledByName(ctx, provider.name)?.let { intent ->
+            if (launch(ctx, intent)) return "Opened ${provider.name} — search for \"$title\""
+        }
 
-        io.execute {
+        // 3. Not installed: Appstore page, or an Appstore search by name
+        val storeUris = pkgs.firstOrNull()?.let { pkg ->
+            listOf("amzn://apps/android?p=$pkg", "market://details?id=$pkg")
+        } ?: run {
+            val q = Uri.encode(keywordsFor(provider.name).firstOrNull() ?: provider.name)
+            listOf("amzn://apps/android?s=$q", "market://search?q=$q")
+        }
+        for (uri in storeUris) {
             try {
-                val info = Tmdb.watchProviders(id, region)
-                main.post { if (!isFinishing && !isDestroyed) showProviders(info, title, region, row, hint) }
-            } catch (e: Exception) {
-                main.post {
-                    if (!isFinishing && !isDestroyed) hint.text = "Couldn't load services: ${e.message}"
-                }
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return "${provider.name} isn't installed — opening the Appstore."
+            } catch (e: ActivityNotFoundException) {
+                // try next store
             }
         }
-    }
-
-    private fun showProviders(info: WatchInfo, title: String, region: String, row: LinearLayout, hint: TextView) {
-        row.removeAllViews()
-        info.providers.forEach { p ->
-            val chip = Ui.chip(this, "${p.name}  ·  ${p.kind}") {
-                val msg = Launcher.open(this, p, title)
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-            }
-            if (row.childCount == 0) (chip.layoutParams as LinearLayout.LayoutParams).marginStart = 0
-            row.addView(chip)
-        }
-        if (info.link != null) {
-            val web = Ui.chip(this, "More options (browser)") {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.link)))
-                } catch (e: Exception) {
-                    Toast.makeText(this, "No web browser installed on this device.", Toast.LENGTH_LONG).show()
-                }
-            }
-            if (row.childCount == 0) (web.layoutParams as LinearLayout.LayoutParams).marginStart = 0
-            row.addView(web)
-        }
-
-        hint.text = if (info.providers.isEmpty()) {
-            "Not listed on any streaming service in ${Regions.name(region)}. Try another region from the main screen."
-        } else {
-            "Opens the service's app — then search for the title there. Your VPN must be set to ${Regions.name(region)}."
-        }
-        row.getChildAt(0)?.requestFocus()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        io.shutdownNow()
+        return "${provider.name} isn't installed. Install it, then search for \"$title\"."
     }
 }
